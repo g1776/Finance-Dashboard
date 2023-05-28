@@ -3,48 +3,56 @@ from dash import Dash, html, dash_table, dcc, callback, Output, Input
 import pandas as pd
 import plotly.express as px
 import dash_mantine_components as dmc
+import json
 
 
-def load_data():
+# load the dashboard
+SETTINGS = json.load(open("settings.json", "r"))
+
+
+def load_data(account_settings):
     # TODO: We should really only be looking at expenses from checkings, and additionally load in the savings account for income
-    df = pd.read_csv(r"C:\Users\grego\Downloads\Checking1.csv", header=None)
+    df = pd.read_csv(account_settings["filePath"], header=None)
 
-    # give the columns names, and drop the columns we don't need
-    df.columns = ["Date", "Amount", "DROP", "DROP2", "Description"]
-    df.drop(["DROP", "DROP2"], axis=1, inplace=True)
+    # give the columns names, and drop the columns we don't need (any that start with DROP)
+    df.columns = account_settings["columns"]
+    to_drop = [col for col in df.columns if col.startswith("DROP")]
+    df.drop(to_drop, axis=1, inplace=True)
 
-    # convert the date column to datetime
-    df["Date"] = pd.to_datetime(df["Date"])
+    if "Date" in df.columns:
+        # convert the date column to datetime
+        df["Date"] = pd.to_datetime(df["Date"])
 
-    # sort the dataframe by date
-    df.sort_values(by="Date", inplace=True)
+        # sort the dataframe by date
+        df.sort_values(by="Date", inplace=True)
+    else:
+        print("Expected a Date column, but none was found.")
 
     return df
 
 
-def clean_description(df):
-    """Call this function to clean the description column of the dataframe."""
+def clean_description(df, account_type):
+    """
+    Call this function to clean the description column of the dataframe.
+
+    account_type can be "savings" or "checking"
+    """
+
+    if "Description" not in df.columns:
+        print("Expected a Description column, but none was found.")
+        return df
 
     descr_clean = df.copy()
 
     # remove all of these patterns from the description column
-    patterns = [
-        r"PURCHASE AUTHORIZED ON \d{2}/\d{2}",
-        r"\b\w{16}\sCARD\s\d{4}\b",
-        r"PURCHASE INTL AUTHORIZED ON \d{2}/\d{2}",
-    ]
+    patterns = SETTINGS[account_type]["patterns"]
     for pattern in patterns:
+        print(pattern)
         descr_clean["Description"] = (
             descr_clean["Description"].str.replace(pattern, "", regex=True).str.strip()
         )
 
-    custom_categories = {
-        "Penn State Apt Rent": "Rent",
-        "ONLINE TRANSFER FROM GLATZER G": "Savings Transfer",
-        "VENMO CASHOUT": "Venmo Cashout",
-        "VENMO PAYMENT": "Venmo Payment",
-        "PANERA BREAD": "Panera Bread",
-    }
+    custom_categories = SETTINGS[account_type]["customCategories"]
 
     # replace the custom categories
     for custom_category in custom_categories:
@@ -61,14 +69,30 @@ def clean_description(df):
     return descr_clean
 
 
-def transactions_over_time(df):
+def transactions_over_time(checking, savings):
     """Call this function to plot the transactions over time."""
 
     # clean the description column
-    to_plot = clean_description(df)
+    c_clean = clean_description(checking, "checking")
+    c_clean["account"] = "checking"
+    s_clean = clean_description(savings, "savings")
+    s_clean["account"] = "savings"
+
+    # join checking and savings, ignoring transfers between accounts
+    # - income comes from positive savings transactions
+    # - expenses come from negative checking transactions
+    to_plot = pd.concat(
+        [
+            c_clean[c_clean["Amount"] < 0],  # grab expenses from checking
+            s_clean[s_clean["Amount"] > 0],  # grab income from savings
+        ]
+    )
 
     # Assign colors based on transaction values
     to_plot["Color"] = to_plot["Amount"].apply(lambda x: "green" if x >= 0 else "red")
+
+    # sort by date
+    to_plot.sort_values(by="Date", inplace=True)
 
     fig = px.bar(
         to_plot,
@@ -95,11 +119,13 @@ def description_pie_chart(df, type="+", legend=False):
     """Call this function to plot the description pie chart, with the option to filter by type."""
 
     # clean the description column
-    to_plot = clean_description(df)
-
     if type == "+":
+        to_plot = clean_description(df, "savings")
+        to_plot = to_plot[to_plot["Amount"] > 0]
         title = "Income by Category"
     elif type == "-":
+        to_plot = clean_description(df, "checking")
+        to_plot = to_plot[to_plot["Amount"] < 0]
         to_plot["Amount"] *= -1
         title = "Expenses by Category"
 
@@ -149,7 +175,8 @@ def create_table(df):
     return table
 
 
-df = load_data()
+checking = load_data(SETTINGS["checking"])
+savings = load_data(SETTINGS["savings"])
 
 # Initialize the app - incorporate css
 external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"]
@@ -160,14 +187,37 @@ app.layout = dmc.Container(
     [
         dmc.Title("Transactions Dashboard", color="blue", size="h1", style={"margin-bottom": 20}),
         dmc.Title("Data snapshot", size="h3"),
-        create_table(df.head(5)),
         dmc.Grid(
             [
                 dmc.Col(
-                    [dcc.Graph(figure=transactions_over_time(df), id="graph-placeholder")], span=12
+                    [
+                        dmc.Title("Checking", size="h4"),
+                        create_table(checking.head(5)),
+                    ],
+                    span=6,
                 ),
-                dmc.Col([description_pie_chart(df, type="+", legend=True)], span=6),
-                dmc.Col([description_pie_chart(df, type="-", legend=True)], span=6),
+                dmc.Col(
+                    [
+                        dmc.Title("Savings", size="h4"),
+                        create_table(savings.head(5)),
+                    ],
+                    span=6,
+                ),
+            ]
+        ),
+        dmc.Grid(
+            [
+                dmc.Col(
+                    [
+                        dcc.Graph(
+                            figure=transactions_over_time(checking, savings),
+                            id="graph-placeholder",
+                        )
+                    ],
+                    span=12,
+                ),
+                dmc.Col([description_pie_chart(savings, type="+", legend=True)], span=6),
+                dmc.Col([description_pie_chart(checking, type="-", legend=True)], span=6),
             ]
         ),
     ],

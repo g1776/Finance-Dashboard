@@ -1,0 +1,35 @@
+{
+    "savings": {
+        "filePath": "C:/Users/grego/Downloads/Savings2.csv",
+        "columns": ["Date", "Amount", "DROP", "DROP2", "Description"],
+        "patterns": [
+            "PURCHASE AUTHORIZED ON \\d{2}/\\d{2}",
+            "\\b\\w{16}\\sCARD\\s\\d{4}\\b",
+            "PURCHASE INTL AUTHORIZED ON \\d{2}/\\d{2}"
+        ],
+        "customCategories": {
+            "PSU REFUNDS": "PSU Refund",
+            "PENN STATE UNIV REG SALARY": "PSU Research",
+            "VENMO CASHOUT": "Venmo Cashout",
+            "VENMO PAYMENT": "Venmo Payment",
+            "PANERA BREAD": "Panera Bread"
+        }
+
+    },
+    "checking": {
+        "filePath": "C:/Users/grego/Downloads/Checking1.csv",
+        "columns": ["Date", "Amount", "DROP", "DROP2", "Description"],
+        "patterns": [
+            "PURCHASE AUTHORIZED ON \\d{2}/\\d{2}",
+            "\\b\\w{16}\\sCARD\\s\\d{4}\\b",
+            "PURCHASE INTL AUTHORIZED ON \\d{2}/\\d{2}"
+        ],
+        "customCategories": {
+            "Penn State Apt Rent": "Rent",
+            "ONLINE TRANSFER FROM GLATZER G": "Savings Transfer",
+            "VENMO CASHOUT": "Venmo Cashout",
+            "VENMO PAYMENT": "Venmo Payment",
+            "PANERA BREAD": "Panera Bread"
+        }
+    }
+}   
