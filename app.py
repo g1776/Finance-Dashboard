@@ -6,6 +6,7 @@ import dash_mantine_components as dmc
 
 
 def load_data():
+    # TODO: We should really only be looking at expenses from checkings, and additionally load in the savings account for income
     df = pd.read_csv(r"C:\Users\grego\Downloads\Checking1.csv", header=None)
 
     # give the columns names, and drop the columns we don't need
@@ -36,6 +37,26 @@ def clean_description(df):
         descr_clean["Description"] = (
             descr_clean["Description"].str.replace(pattern, "", regex=True).str.strip()
         )
+
+    custom_categories = {
+        "Penn State Apt Rent": "Rent",
+        "ONLINE TRANSFER FROM GLATZER G": "Savings Transfer",
+        "VENMO CASHOUT": "Venmo Cashout",
+        "VENMO PAYMENT": "Venmo Payment",
+        "PANERA BREAD": "Panera Bread",
+    }
+
+    # replace the custom categories
+    for custom_category in custom_categories:
+        # if the custom category is in the description, replace it
+        descr_clean.loc[
+            descr_clean["Description"].str.contains(custom_category), "Description"
+        ] = custom_categories[custom_category]
+
+    # if the description is over 30 characters, cut it off and add ...
+    descr_clean["Description"] = descr_clean["Description"].apply(
+        lambda x: x[:30] + "..." if len(x) > 30 else x
+    )
 
     return descr_clean
 
@@ -77,27 +98,33 @@ def description_pie_chart(df, type="+", legend=False):
     to_plot = clean_description(df)
 
     if type == "+":
-        to_plot = to_plot[to_plot["Amount"] >= 0]
-        title = "Top 10 Positive Transaction Types"
+        title = "Income by Category"
     elif type == "-":
-        to_plot = to_plot[to_plot["Amount"] < 0]
-        title = "Top 10 Negative Transaction Types"
+        to_plot["Amount"] *= -1
+        title = "Expenses by Category"
 
-    # get the top 10 descriptions
+    # get the top 10 descriptions by total value
     to_plot = (
-        to_plot.groupby(["Description"])["Description"]
-        .count()
-        .reset_index(name="Frequency")
-        .sort_values(["Frequency"], ascending=False)
+        to_plot.groupby("Description")
+        .sum("Amount")
+        .reset_index()
+        .rename(columns={"Amount": "Total Amount"})
+        .sort_values(by="Total Amount", ascending=False)
         .head(10)
     )
 
     fig = px.pie(
-        to_plot, values="Frequency", names="Description", title=title, hover_data=["Description"]
+        to_plot,
+        values="Total Amount",
+        names="Description",
+        title=title,
+        hover_data=["Description"],
     )
 
     # make hover only show the description
-    fig.update_traces(hovertemplate="<br>".join(["Description: %{label}", "Frequency: %{value}"]))
+    fig.update_traces(
+        hovertemplate="<br>".join(["Description: %{label}", "Total Amount: %{value}"])
+    )
 
     # toggle legend
     fig.update_layout(showlegend=legend)
@@ -139,7 +166,7 @@ app.layout = dmc.Container(
                 dmc.Col(
                     [dcc.Graph(figure=transactions_over_time(df), id="graph-placeholder")], span=12
                 ),
-                dmc.Col([description_pie_chart(df, type="+", legend=False)], span=6),
+                dmc.Col([description_pie_chart(df, type="+", legend=True)], span=6),
                 dmc.Col([description_pie_chart(df, type="-", legend=True)], span=6),
             ]
         ),
